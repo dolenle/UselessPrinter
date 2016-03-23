@@ -20,16 +20,16 @@
 
 //Parameters
 #define MAX_PWM 255
-#define ACCEL 0.7
-#define NUM_SWITCHES 5
+#define ACCEL 0.4
+#define NUM_SWITCHES 12
 #define LID_DELAY 500
 #define MARGIN 50
 
 enum fingerSteps {FNG_REST, FNG_HOLD, FNG_PRESS};
-enum lidSteps {LID_OPEN, LID_CLOSED};
+enum lidSteps {LID_OPEN=10, LID_CLOSED=120};
 
 unsigned int switchPos[] = {500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000};
-char touched[NUM_SWITCHES];
+char touchStack[NUM_SWITCHES];
 char touchPtr = -1;
 char switched = -1;
 char lastPressed;
@@ -77,15 +77,15 @@ void setup() {
   }
   
   MPR121.setTouchThreshold(80);
-  MPR121.setTouchThreshold(12,1);
+  MPR121.setTouchThreshold(12,8);
   MPR121.setReleaseThreshold(20); 
-  MPR121.setTouchThreshold(12,0 ); 
+  MPR121.setReleaseThreshold(12,5); 
   MPR121.updateTouchData();
   MPR121.setProxMode(PROX0_11);
 
   TCCR2B = TCCR2B & 0xF8 | 0x1; //increase PWM frequency
 
-  SPI.begin();
+//  SPI.begin();
 
   //initialize servos
   lidServo.attach(LID_SERVO);
@@ -113,7 +113,7 @@ void loop() {
   MPR121.updateTouchData();
   for(char i=0; i<NUM_SWITCHES; i++) {
     if(MPR121.isNewTouch(i)) {
-      touched[++touchPtr] = i; //push to stack
+      touchStack[++touchPtr] = i; //push to stack
 //      Serial.print(i);
 //      Serial.println(" was just touched");  
     } else if(MPR121.isNewRelease(i)) {
@@ -128,7 +128,7 @@ void loop() {
 //    Serial.println("No Proximity");
     proximity = false;
   }
-  readSwitches();
+  //readSwitches();
 
   unsigned long now = millis();
 
@@ -138,6 +138,7 @@ void loop() {
     Serial.println("Open Lid");
     lidOpen = true;
     lidOpenTime = now;
+    lidServo.write(LID_OPEN);
   }
 
   //If switch was sucessfully pressed, stop pressing it
@@ -149,7 +150,7 @@ void loop() {
   if(switched >= 0) {
     carriagePos = switchPos[switched];
   } else if(touchPtr >= 0) {
-    carriagePos = switchPos[touched[touchPtr]];
+    carriagePos = switchPos[touchStack[touchPtr]];
   }
 
   //Get next finger position
@@ -171,6 +172,7 @@ void loop() {
   if(lidOpen && !proximity && fingerPos == FNG_REST && now - lidOpenTime > LID_DELAY) {
     Serial.println("Close lid");
     lidOpen = false;
+    lidServo.write(LID_CLOSED);
   }
 }
 
