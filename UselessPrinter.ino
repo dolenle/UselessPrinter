@@ -106,6 +106,7 @@ void loop() {
     analogWrite(MOTOR_PWM, -max(motorSpeed, -MAX_PWM));
     digitalWrite(7, HIGH);
     digitalWrite(8, LOW);
+    error = -error;
   }
 
   //read switch and touch
@@ -152,9 +153,13 @@ void loop() {
   }
 
   //Get next finger position
-  if(switched >= 0 && now - lidOpenTime > LID_DELAY && error < MARGIN) {
-    fingerServo.write(fingerPos = FNG_PRESS); //press switch
-    lastPressed = switched;
+  if(switched >= 0 && now - lidOpenTime > LID_DELAY) {
+    if(error < MARGIN) {
+      fingerServo.write(fingerPos = FNG_PRESS); //press switch
+      lastPressed = switched;
+    } else {
+      fingerServo.write(fingerPos = FNG_HOLD); //wait to move to next switch
+    }
   } else if(touchPtr >= 0 && now - lidOpenTime > LID_DELAY && error < MARGIN) {
     fingerServo.write(fingerPos = FNG_HOLD); //hover over switch
     Serial.println("Hover");
