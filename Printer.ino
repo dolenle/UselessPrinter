@@ -9,12 +9,16 @@
 #include <Servo.h>
 #include <avr/interrupt.h> 
 
+//Pin assignments
 #define MOTOR_PWM 11
 #define MOTOR_0 7
 #define MOTOR_1 8
 #define SR_LOAD 5
 #define MICROSWITCH 4
+#define LID_SERVO 9
+#define FINGER_SERVO 10
 
+//Parameters
 #define MAX_PWM 255
 #define ACCEL 0.7
 #define NUM_SWITCHES 5
@@ -39,6 +43,8 @@ unsigned int carriagePos;
 unsigned int fingerPos;
 
 Encoder myEnc(2, 3);
+Servo lidServo;
+Servo fingerServo;
 
 void setup() {
   Serial.begin(115200);
@@ -80,6 +86,12 @@ void setup() {
   TCCR2B = TCCR2B & 0xF8 | 0x1; //increase PWM frequency
 
   SPI.begin();
+
+  //initialize servos
+  lidServo.attach(LID_SERVO);
+  fingerServo.attach(FINGER_SERVO);
+  lidServo.write(LID_CLOSED);
+  fingerServo.write(FNG_REST);
 }
 
 void loop() {
@@ -129,7 +141,7 @@ void loop() {
 
   //If switch was sucessfully pressed, stop pressing it
   if(fingerPos == FNG_PRESS && switched != lastPressed) {
-    fingerPos = FNG_HOLD;
+    fingerServo.write(fingerPos = FNG_HOLD);
   }
 
   //Get next carriage position
@@ -141,13 +153,13 @@ void loop() {
 
   //Get next finger position
   if(switched >= 0 && now - lidOpenTime > LID_DELAY && error < MARGIN) {
-    fingerPos = FNG_PRESS; //press switch
+    fingerServo.write(fingerPos = FNG_PRESS); //press switch
     lastPressed = switched;
   } else if(touchPtr >= 0 && now - lidOpenTime > LID_DELAY && error < MARGIN) {
-    fingerPos = FNG_HOLD; //hover over switch
+    fingerServo.write(fingerPos = FNG_HOLD); //hover over switch
     Serial.println("Hover");
   } else {
-    fingerPos = FNG_REST; //retract
+    fingerServo.write(fingerPos = FNG_REST); //retract
   }
 
   //Close lid if no input
@@ -166,7 +178,7 @@ void readSwitches() { //2 cascaded 74LS165
   for(char i=0; i<NUM_SWITCHES; i++) {
     if(val & 0x01) {
       switched = i;
-      break;
+      return;
     } else {
       val >>= 1;
     }
