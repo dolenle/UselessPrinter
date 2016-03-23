@@ -30,6 +30,7 @@ enum lidSteps {LID_OPEN=10, LID_CLOSED=120};
 
 unsigned int switchPos[] = {500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000};
 char touchStack[NUM_SWITCHES];
+char touchInd[NUM_SWITCHES];
 char touchPtr = -1;
 char switched = -1;
 char lastPressed;
@@ -113,11 +114,13 @@ void loop() {
   MPR121.updateTouchData();
   for(char i=0; i<NUM_SWITCHES; i++) {
     if(MPR121.isNewTouch(i)) {
+      touchInd[i] = 1;
       touchStack[++touchPtr] = i; //push to stack
 //      Serial.print(i);
 //      Serial.println(" was just touched");  
     } else if(MPR121.isNewRelease(i)) {
       touchPtr--;
+      touchInd[i] = 0;
     }
   }
   //read proximity
