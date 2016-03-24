@@ -120,7 +120,9 @@ void loop() {
 //      Serial.print(i);
 //      Serial.println(" was just touched");  
     } else if(MPR121.isNewRelease(i)) {
-      touchPtr--;
+      if(touchStack[touchPtr] == i) {
+        touchPtr--;
+      }
       touchInd[i] = 0;
     }
   }
@@ -128,7 +130,7 @@ void loop() {
   if(MPR121.isNewTouch(12)) {
     proximity = true;
 //    Serial.println("Proximity"); 
-  } else if(MPR121.isNewRelease(12)){
+  } else if(MPR121.isNewRelease(12)) {
 //    Serial.println("No Proximity");
     proximity = false;
   }
@@ -154,7 +156,11 @@ void loop() {
   if(switched >= 0) {
     carriagePos = switchPos[switched];
   } else if(touchPtr >= 0) {
-    carriagePos = switchPos[touchStack[touchPtr]];
+    if(touchInd[touchStack[touchPtr]]) {
+      carriagePos = switchPos[touchStack[touchPtr]];
+    } else {
+      touchPtr--;
+    }
   }
 
   //Get next finger position
