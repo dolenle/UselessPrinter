@@ -5,7 +5,6 @@
 #include <Encoder.h>
 #include <MPR121.h>
 #include <Wire.h>
-#include <SPI.h>
 #include <Servo.h>
 #include <avr/interrupt.h> 
 
@@ -14,6 +13,8 @@
 #define MOTOR_0 7
 #define MOTOR_1 8
 #define SR_LOAD 5
+#define SR_CLK 6
+#define SR_DATA 12
 #define MICROSWITCH 4
 #define LID_SERVO 9
 #define FINGER_SERVO 10
@@ -43,7 +44,7 @@ int motorSpeed;
 unsigned int carriagePos;
 unsigned int fingerPos;
 
-Encoder myEnc(2, 3);
+Encoder myEnc(2, 3); //hardware interrupt
 Servo lidServo;
 Servo fingerServo;
 
@@ -51,6 +52,8 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Starting...");
   pinMode(SR_LOAD, OUTPUT);
+  pinMode(SR_CLK, OUTPUT);
+  pinMode(SR_DATA, OUTPUT);
   pinMode(MICROSWITCH, INPUT_PULLUP);
   pinMode(MOTOR_PWM, OUTPUT);
   pinMode(MOTOR_0, OUTPUT);
@@ -85,8 +88,6 @@ void setup() {
   MPR121.setProxMode(PROX0_11);
 
   TCCR2B = TCCR2B & 0xF8 | 0x1; //increase PWM frequency
-
-//  SPI.begin();
 
   //initialize servos
   lidServo.attach(LID_SERVO);
@@ -131,7 +132,7 @@ void loop() {
 //    Serial.println("No Proximity");
     proximity = false;
   }
-  //readSwitches();
+  readSwitches();
 
   unsigned long now = millis();
 
@@ -180,11 +181,9 @@ void loop() {
 }
 
 void readSwitches() { //2 cascaded 74LS165
-  SPI.beginTransaction(SPISettings(25000000, MSBFIRST, SPI_MODE0));
   digitalWrite(SR_LOAD, HIGH);
-  unsigned int val = SPI.transfer16(0);
+  unsigned int val = (shiftIn(SR_DATA, SR_CLK, MSBFIRST) << 8) | shiftIn(SR_DATA, SR_CLK, MSBFIRST);
   digitalWrite(SR_LOAD, LOW);
-  SPI.endTransaction();
   for(char i=0; i<NUM_SWITCHES; i++) {
     if(val & 0x01) {
       switched = i;
