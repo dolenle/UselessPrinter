@@ -21,7 +21,7 @@
 
 //Parameters
 #define MAX_PWM 255
-#define ACCEL 0.4
+#define ACCEL 0.5 //higher -> more accuracy and overshoot
 #define NUM_SWITCHES 12
 #define LID_DELAY 500
 #define MARGIN 50
@@ -53,7 +53,7 @@ void setup() {
   Serial.println("Starting...");
   pinMode(SR_LOAD, OUTPUT);
   pinMode(SR_CLK, OUTPUT);
-  pinMode(SR_DATA, OUTPUT);
+  pinMode(SR_DATA, INPUT);
   pinMode(MICROSWITCH, INPUT_PULLUP);
   pinMode(MOTOR_PWM, OUTPUT);
   pinMode(MOTOR_0, OUTPUT);
@@ -186,7 +186,7 @@ void loop() {
   }
 }
 
-void readSwitches() { //2 cascaded 74LS165
+void readSwitches() { //2 cascaded 74LS165, use SER as LSB
   digitalWrite(SR_LOAD, HIGH);
   unsigned int val = (shiftIn(SR_DATA, SR_CLK, MSBFIRST) << 8) | shiftIn(SR_DATA, SR_CLK, MSBFIRST);
   digitalWrite(SR_LOAD, LOW);
