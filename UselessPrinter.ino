@@ -12,22 +12,22 @@
 #define MOTOR_PWM 11
 #define MOTOR_0 7
 #define MOTOR_1 6
-#define SR_LOAD 5
-#define SR_CLK 8
-#define SR_DATA 12
+#define SR_LOAD 5 //PD5
+#define SR_CLK 8 //PB0
+#define SR_DATA 12 //PB4
 #define MICROSWITCH 4
 #define LID_SERVO 9
 #define FINGER_SERVO 10
 
 //Parameters
-#define MAX_PWM 128
+#define MAX_PWM 128 //max motor speed
 #define ACCEL 0.5 //higher -> more accuracy and overshoot
 #define NUM_SWITCHES 12
 #define LID_DELAY 500
 #define MARGIN 50
 
-enum fingerSteps {FNG_REST=0, FNG_HOLD=90, FNG_PRESS=180};
-enum lidSteps {LID_OPEN=10, LID_CLOSED=120};
+enum fingerSteps {FNG_REST=0, FNG_HOLD=90, FNG_PRESS=180}; //finger servo positions
+enum lidSteps {LID_OPEN=10, LID_CLOSED=120}; //lid servo positions
 
 unsigned int switchPos[] = {400,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,7000};
 char touchStack[NUM_SWITCHES];
@@ -142,7 +142,6 @@ void loop() {
 
   //First, open lid if touch or switched on
   if(!lidOpen && (touchPtr >= 0 || switched >= 0 || proximity)) {
-    //open lid
     Serial.println("Open Lid");
     lidOpen = true;
     lidOpenTime = now;
@@ -197,5 +196,19 @@ void readSwitches() { //2 cascaded 74LS165, use SER as LSB
     }
   }
   switched = -1;
+}
+
+//faster version
+void readSwitches2() {
+ //Shift 15 times because QH = H without clocking
+ unsigned int val = 0;
+ digitalWrite(SR_LOAD, HIGH);
+ digitalWrite(SR_CLK, LOW);
+ for (char i=15; i>0; i--)  {
+   PORTB ^= 0x01; //clk high
+   val |= bitRead(PORTB,4) << i;
+   PORTB ^= 0x01; //clk low
+ }
+ digitalWrite(SR_LOAD, LOW);
 }
 
