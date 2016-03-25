@@ -15,14 +15,14 @@
 #define SR_LOAD 5 //PD5
 #define SR_CLK 12 //PB4
 #define SR_DATA 8 //PB0
-#define SR_CLK_RAW 4
-#define SR_DATA_RAW 0
+#define SR_CLK_BIT 4
+#define SR_DATA_BIT 0
 #define MICROSWITCH 4
 #define LID_SERVO 9
 #define FINGER_SERVO 10
 
 //Parameters
-#define MAX_PWM 128 //max motor speed
+#define MAX_PWM 150 //max motor speed
 #define ACCEL 0.5 //higher -> more accuracy and overshoot
 #define NUM_SWITCHES 12
 #define LID_DELAY 500
@@ -38,6 +38,7 @@ char touchPtr = -1;
 char switched = -1;
 char lastPressed;
 
+unsigned int switchVal;
 boolean proximity;
 boolean lidOpen;
 unsigned long lidOpenTime;
@@ -113,7 +114,7 @@ void loop() {
     error = -error;
   }
 
-  //read switch and touch
+  //read touch
   MPR121.updateTouchData();
   for(char i=0; i<NUM_SWITCHES; i++) {
     if(MPR121.isNewTouch(i)) {
@@ -125,10 +126,6 @@ void loop() {
       }
       touchPtr--;
     }
-    if(touchPtr >= NUM_SWITCHES) {
-      Serial.println("fatal error");
-      while(1);
-    }
   }
   //read proximity
   if(MPR121.isNewTouch(12)) {
@@ -136,7 +133,8 @@ void loop() {
   } else if(MPR121.isNewRelease(12)) {
     proximity = false;
   }
-  readSwitches2();
+  //read switches
+  readSwitches();
 
   unsigned long now = millis();
 
@@ -157,7 +155,7 @@ void loop() {
   if(switched >= 0) {
     carriagePos = switchPos[switched];
   } else if(touchPtr >= 0) {
-    //carriagePos = switchPos[touchStack[touchPtr]];
+//    carriagePos = switchPos[touchStack[touchPtr]];
   }
 
   //Get next finger position
@@ -182,39 +180,22 @@ void loop() {
   }
 }
 
-void readSwitches() { //2 cascaded 74LS165, use SER as LSB, approx 270uS
-  digitalWrite(SR_LOAD, HIGH);
-  digitalWrite(SR_CLK, LOW);
-  unsigned int val = ((shiftIn(SR_DATA, SR_CLK, MSBFIRST) << 8) | shiftIn(SR_DATA, SR_CLK, MSBFIRST)) >> 1;
-  digitalWrite(SR_LOAD, LOW);
-  for(char i=0; i<NUM_SWITCHES; i++) {
-    if(val & 0x01) {
-      switched = i;
-      return;
-    } else {
-      val >>= 1;
-    }
-  }
-  switched = -1;
-}
-
 //faster version, approx 70uS
-void readSwitches2() {
-  unsigned int val = 0;
+void readSwitches() {
+  switchVal = 0;
   digitalWrite(SR_LOAD, HIGH);
-  digitalWrite(SR_CLK, LOW);
   for (char i=15; i>=0; i--)  {
-    PORTB ^= bit(SR_CLK_RAW); //clk high
-    val |= (bitRead(PINB, SR_DATA_RAW) << i);
-    PORTB ^= bit(SR_CLK_RAW); //clk low
+    PORTB ^= bit(SR_CLK_BIT); //clk high
+    switchVal |= (bitRead(PINB, SR_DATA_BIT) << i);
+    PORTB ^= bit(SR_CLK_BIT); //clk low
   }
   digitalWrite(SR_LOAD, LOW);
   for(char i=NUM_SWITCHES-1; i>=0; i--) {
-    if(val & 0x01) {
+    if(switchVal & 0x01) {
       switched = i;
       return;
     } else {
-      val >>= 1;
+      switchVal >>= 1;
     }
   }
   switched = -1;
