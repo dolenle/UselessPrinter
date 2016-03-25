@@ -13,8 +13,10 @@
 #define MOTOR_0 7
 #define MOTOR_1 6
 #define SR_LOAD 5 //PD5
-#define SR_CLK 8 //PB0
-#define SR_DATA 12 //PB4
+#define SR_CLK 12 //PB4
+#define SR_DATA 8 //PB0
+#define SR_CLK_RAW 4
+#define SR_DATA_RAW 0
 #define MICROSWITCH 4
 #define LID_SERVO 9
 #define FINGER_SERVO 10
@@ -131,12 +133,10 @@ void loop() {
   //read proximity
   if(MPR121.isNewTouch(12)) {
     proximity = true;
-//    Serial.println("Proximity"); 
   } else if(MPR121.isNewRelease(12)) {
-//    Serial.println("No Proximity");
     proximity = false;
   }
-  readSwitches();
+  readSwitches2();
 
   unsigned long now = millis();
 
@@ -157,7 +157,7 @@ void loop() {
   if(switched >= 0) {
     carriagePos = switchPos[switched];
   } else if(touchPtr >= 0) {
-      carriagePos = switchPos[touchStack[touchPtr]];
+    //carriagePos = switchPos[touchStack[touchPtr]];
   }
 
   //Get next finger position
@@ -182,7 +182,7 @@ void loop() {
   }
 }
 
-void readSwitches() { //2 cascaded 74LS165, use SER as LSB
+void readSwitches() { //2 cascaded 74LS165, use SER as LSB, approx 270uS
   digitalWrite(SR_LOAD, HIGH);
   digitalWrite(SR_CLK, LOW);
   unsigned int val = ((shiftIn(SR_DATA, SR_CLK, MSBFIRST) << 8) | shiftIn(SR_DATA, SR_CLK, MSBFIRST)) >> 1;
@@ -198,17 +198,25 @@ void readSwitches() { //2 cascaded 74LS165, use SER as LSB
   switched = -1;
 }
 
-//faster version
+//faster version, approx 70uS
 void readSwitches2() {
- //Shift 15 times because QH = H without clocking
- unsigned int val = 0;
- digitalWrite(SR_LOAD, HIGH);
- digitalWrite(SR_CLK, LOW);
- for (char i=15; i>0; i--)  {
-   PORTB ^= 0x01; //clk high
-   val |= bitRead(PORTB,4) << i;
-   PORTB ^= 0x01; //clk low
- }
- digitalWrite(SR_LOAD, LOW);
+  unsigned int val = 0;
+  digitalWrite(SR_LOAD, HIGH);
+  digitalWrite(SR_CLK, LOW);
+  for (char i=15; i>=0; i--)  {
+    PORTB ^= bit(SR_CLK_RAW); //clk high
+    val |= (bitRead(PINB, SR_DATA_RAW) << i);
+    PORTB ^= bit(SR_CLK_RAW); //clk low
+  }
+  digitalWrite(SR_LOAD, LOW);
+  for(char i=NUM_SWITCHES-1; i>=0; i--) {
+    if(val & 0x01) {
+      switched = i;
+      return;
+    } else {
+      val >>= 1;
+    }
+  }
+  switched = -1;
 }
 
