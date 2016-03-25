@@ -1,5 +1,6 @@
 /* 
  *  Useless Machine with Touch Sense
+ *  Dolen Le 2016
  */
 
 #include <Encoder.h>
@@ -20,9 +21,10 @@
 #define MICROSWITCH 4
 #define LID_SERVO 9
 #define FINGER_SERVO 10
+#define LED 13
 
 //Parameters
-#define MAX_PWM 150 //max motor speed
+#define MAX_PWM 192 //max motor speed
 #define ACCEL 0.5 //higher -> more accuracy and overshoot
 #define NUM_SWITCHES 12
 #define LID_DELAY 500
@@ -31,7 +33,9 @@
 enum fingerSteps {FNG_REST=0, FNG_HOLD=90, FNG_PRESS=180}; //finger servo positions
 enum lidSteps {LID_OPEN=10, LID_CLOSED=120}; //lid servo positions
 
-unsigned int switchPos[] = {400,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,7000};
+//unsigned int switchPos[] = {400,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,7000};
+unsigned int switchPos[] = {7000,6390,5782,5173,4564,3954,3345,2736,2127,1518,909,300}; //fliplr
+
 char touchStack[NUM_SWITCHES];
 char touchInd[NUM_SWITCHES];
 char touchPtr = -1;
@@ -54,6 +58,8 @@ Servo fingerServo;
 void setup() {
   Serial.begin(115200);
   Serial.println("Starting...");
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, HIGH);
   pinMode(SR_LOAD, OUTPUT);
   pinMode(SR_CLK, OUTPUT);
   pinMode(SR_DATA, INPUT);
@@ -65,12 +71,12 @@ void setup() {
 
   //Initialize position
   analogWrite(MOTOR_PWM, 64);
-  while(digitalRead(MICROSWITCH) == HIGH); //wait
+  while(digitalRead(MICROSWITCH) == HIGH); //home
   digitalWrite(MOTOR_1, HIGH);
   delay(500); //wait to settle
   carriageEnc.write(0);
   while(carriageEnc.read() < 50) {
-    digitalWrite(MOTOR_0, LOW);
+    digitalWrite(MOTOR_0, LOW); //ease off
   }
   digitalWrite(MOTOR_0, HIGH);
   delay(1000);
@@ -82,12 +88,12 @@ void setup() {
   } else {
     Serial.println("Touch init");
   }
-  
-  MPR121.setTouchThreshold(100);
+
+  MPR121.goFast();
+  MPR121.setTouchThreshold(150);
   MPR121.setTouchThreshold(12,8);
   MPR121.setReleaseThreshold(10); 
-  MPR121.setReleaseThreshold(12,5); 
-  MPR121.updateTouchData();
+  MPR121.setReleaseThreshold(12,5);
   MPR121.setProxMode(PROX0_11);
 
   TCCR2B = TCCR2B & 0xF8 | 0x1; //increase PWM frequency
@@ -97,6 +103,7 @@ void setup() {
   fingerServo.attach(FINGER_SERVO);
   lidServo.write(LID_CLOSED);
   fingerServo.write(FNG_REST);
+  digitalWrite(LED, LOW);
 }
 
 void loop() {
@@ -155,7 +162,10 @@ void loop() {
   if(switched >= 0) {
     carriagePos = switchPos[switched];
   } else if(touchPtr >= 0) {
-//    carriagePos = switchPos[touchStack[touchPtr]];
+    carriagePos = switchPos[touchStack[touchPtr]];
+    digitalWrite(LED, HIGH);
+  } else {
+    digitalWrite(LED, LOW);
   }
 
   //Get next finger position
