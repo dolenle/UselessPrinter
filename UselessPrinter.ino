@@ -6,21 +6,21 @@
 #include <MPR121.h>
 #include <Wire.h>
 #include <Servo.h>
-#include <avr/interrupt.h> 
+#define ENCODER_OPTIMIZE_INTERRUPTS
 
 //Pin assignments
 #define MOTOR_PWM 11
 #define MOTOR_0 7
-#define MOTOR_1 8
+#define MOTOR_1 6
 #define SR_LOAD 5
-#define SR_CLK 6
+#define SR_CLK 8
 #define SR_DATA 12
 #define MICROSWITCH 4
 #define LID_SERVO 9
 #define FINGER_SERVO 10
 
 //Parameters
-#define MAX_PWM 255
+#define MAX_PWM 92
 #define ACCEL 0.5 //higher -> more accuracy and overshoot
 #define NUM_SWITCHES 12
 #define LID_DELAY 500
@@ -44,7 +44,7 @@ int motorSpeed;
 unsigned int carriagePos;
 unsigned int fingerPos;
 
-Encoder myEnc(2, 3); //hardware interrupt
+Encoder carriageEnc(2, 3); //hardware interrupt
 Servo lidServo;
 Servo fingerServo;
 
@@ -65,8 +65,8 @@ void setup() {
   while(digitalRead(MICROSWITCH) == HIGH); //wait
   digitalWrite(MOTOR_1, HIGH);
   delay(500); //wait to settle
-  myEnc.write(0);
-  while(myEnc.read() < 50) {
+  carriageEnc.write(0);
+  while(carriageEnc.read() < 50) {
     digitalWrite(MOTOR_0, LOW);
   }
   digitalWrite(MOTOR_0, HIGH);
@@ -80,9 +80,9 @@ void setup() {
     Serial.println("Touch init");
   }
   
-  MPR121.setTouchThreshold(80);
+  MPR121.setTouchThreshold(100);
   MPR121.setTouchThreshold(12,8);
-  MPR121.setReleaseThreshold(20); 
+  MPR121.setReleaseThreshold(10); 
   MPR121.setReleaseThreshold(12,5); 
   MPR121.updateTouchData();
   MPR121.setProxMode(PROX0_11);
@@ -98,16 +98,16 @@ void setup() {
 
 void loop() {
   //Update motor
-  int error = carriagePos - myEnc.read();
+  int error = carriagePos - carriageEnc.read();
   motorSpeed = ACCEL*error;
   if(motorSpeed >= 0) {
     analogWrite(MOTOR_PWM, min(motorSpeed, MAX_PWM));
-    digitalWrite(8, HIGH);
-    digitalWrite(7, LOW);
+    digitalWrite(MOTOR_1, HIGH);
+    digitalWrite(MOTOR_0, LOW);
   } else if(motorSpeed < 0) {
     analogWrite(MOTOR_PWM, -max(motorSpeed, -MAX_PWM));
-    digitalWrite(7, HIGH);
-    digitalWrite(8, LOW);
+    digitalWrite(MOTOR_0, HIGH);
+    digitalWrite(MOTOR_1, LOW);
     error = -error;
   }
 
@@ -115,15 +115,21 @@ void loop() {
   MPR121.updateTouchData();
   for(char i=0; i<NUM_SWITCHES; i++) {
     if(MPR121.isNewTouch(i)) {
-      touchInd[i] = 1;
       touchStack[++touchPtr] = i; //push to stack
-//      Serial.print(i);
-//      Serial.println(" was just touched");  
+      touchInd[i] = touchPtr;
+      Serial.print(i, DEC);
+      Serial.println(" was just touched");  
     } else if(MPR121.isNewRelease(i)) {
-      if(touchStack[touchPtr] == i) {
-        touchPtr--;
+      Serial.print(i, DEC);
+      Serial.println(" was just released");
+      for(char j=touchInd[i]; j<touchPtr; j++) {
+         touchStack[j] = touchStack[j+1];
       }
-      touchInd[i] = 0;
+      touchPtr--;
+    }
+    if(touchPtr >= NUM_SWITCHES) {
+      Serial.println("fatal error");
+      while(1);
     }
   }
   //read proximity
@@ -156,11 +162,7 @@ void loop() {
   if(switched >= 0) {
     carriagePos = switchPos[switched];
   } else if(touchPtr >= 0) {
-    if(touchInd[touchStack[touchPtr]]) {
       carriagePos = switchPos[touchStack[touchPtr]];
-    } else {
-      touchPtr--;
-    }
   }
 
   //Get next finger position
@@ -173,7 +175,6 @@ void loop() {
     }
   } else if(touchPtr >= 0 && now - lidOpenTime > LID_DELAY && error < MARGIN) {
     fingerServo.write(fingerPos = FNG_HOLD); //hover over switch
-    Serial.println("Hover");
   } else {
     fingerServo.write(fingerPos = FNG_REST); //retract
   }
@@ -188,7 +189,9 @@ void loop() {
 
 void readSwitches() { //2 cascaded 74LS165, use SER as LSB
   digitalWrite(SR_LOAD, HIGH);
-  unsigned int val = (shiftIn(SR_DATA, SR_CLK, MSBFIRST) << 8) | shiftIn(SR_DATA, SR_CLK, MSBFIRST);
+  digitalWrite(SR_CLK, LOW);
+  unsigned int val = ((shiftIn(SR_DATA, SR_CLK, MSBFIRST) << 8) | shiftIn(SR_DATA, SR_CLK, MSBFIRST)) >> 1;
+//  Serial.println(val,BIN);
   digitalWrite(SR_LOAD, LOW);
   for(char i=0; i<NUM_SWITCHES; i++) {
     if(val & 0x01) {
