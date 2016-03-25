@@ -20,16 +20,16 @@
 #define FINGER_SERVO 10
 
 //Parameters
-#define MAX_PWM 92
+#define MAX_PWM 128
 #define ACCEL 0.5 //higher -> more accuracy and overshoot
 #define NUM_SWITCHES 12
 #define LID_DELAY 500
 #define MARGIN 50
 
-enum fingerSteps {FNG_REST, FNG_HOLD, FNG_PRESS};
+enum fingerSteps {FNG_REST=0, FNG_HOLD=90, FNG_PRESS=180};
 enum lidSteps {LID_OPEN=10, LID_CLOSED=120};
 
-unsigned int switchPos[] = {500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000};
+unsigned int switchPos[] = {400,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,7000};
 char touchStack[NUM_SWITCHES];
 char touchInd[NUM_SWITCHES];
 char touchPtr = -1;
@@ -117,11 +117,7 @@ void loop() {
     if(MPR121.isNewTouch(i)) {
       touchStack[++touchPtr] = i; //push to stack
       touchInd[i] = touchPtr;
-      Serial.print(i, DEC);
-      Serial.println(" was just touched");  
     } else if(MPR121.isNewRelease(i)) {
-      Serial.print(i, DEC);
-      Serial.println(" was just released");
       for(char j=touchInd[i]; j<touchPtr; j++) {
          touchStack[j] = touchStack[j+1];
       }
@@ -191,7 +187,6 @@ void readSwitches() { //2 cascaded 74LS165, use SER as LSB
   digitalWrite(SR_LOAD, HIGH);
   digitalWrite(SR_CLK, LOW);
   unsigned int val = ((shiftIn(SR_DATA, SR_CLK, MSBFIRST) << 8) | shiftIn(SR_DATA, SR_CLK, MSBFIRST)) >> 1;
-//  Serial.println(val,BIN);
   digitalWrite(SR_LOAD, LOW);
   for(char i=0; i<NUM_SWITCHES; i++) {
     if(val & 0x01) {
