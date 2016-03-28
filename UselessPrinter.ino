@@ -3,11 +3,11 @@
  *  Dolen Le 2016
  */
 
+#define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
 #include <MPR121.h>
 #include <Wire.h>
 #include <Servo.h>
-#define ENCODER_OPTIMIZE_INTERRUPTS
 
 //Pin assignments
 #define MOTOR_PWM 11
@@ -49,7 +49,7 @@ unsigned long lidOpenTime;
 
 int motorSpeed;
 unsigned int carriagePos;
-unsigned int fingerPos;
+byte fingerPos;
 
 Encoder carriageEnc(2, 3); //hardware interrupt
 Servo lidServo;
@@ -89,7 +89,7 @@ void setup() {
     Serial.println("Touch init");
   }
 
-  MPR121.goFast();
+  MPR121.goFast(); //increase i2c frequency
   MPR121.setTouchThreshold(150);
   MPR121.setTouchThreshold(12,8);
   MPR121.setReleaseThreshold(10); 
@@ -147,10 +147,10 @@ void loop() {
 
   //First, open lid if touch or switched on
   if(!lidOpen && (touchPtr >= 0 || switched >= 0 || proximity)) {
-    Serial.println("Open Lid");
     lidOpen = true;
     lidOpenTime = now;
     lidServo.write(LID_OPEN);
+    digitalWrite(LED, HIGH);
   }
 
   //If switch was sucessfully pressed, stop pressing it
@@ -163,11 +163,8 @@ void loop() {
     carriagePos = switchPos[switched];
   } else if(touchPtr >= 0) {
     carriagePos = switchPos[touchStack[touchPtr]];
-    digitalWrite(LED, HIGH);
-  } else {
-    digitalWrite(LED, LOW);
   }
-
+  
   //Get next finger position
   if(switched >= 0 && now - lidOpenTime > LID_DELAY) {
     if(error < MARGIN) {
@@ -184,9 +181,9 @@ void loop() {
 
   //Close lid if no input
   if(lidOpen && !proximity && fingerPos == FNG_REST && now - lidOpenTime > LID_DELAY) {
-    Serial.println("Close lid");
     lidOpen = false;
     lidServo.write(LID_CLOSED);
+    digitalWrite(LED, LOW);
   }
 }
 
