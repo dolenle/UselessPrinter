@@ -31,7 +31,7 @@
 #define PRESS_DELAY 100
 #define MARGIN 30 //carriage position error margin
 
-enum fingerSteps {FNG_REST=173, FNG_HOLD=120, FNG_PRESS=90}; //finger servo positions
+enum fingerSteps {FNG_REST=173, FNG_HOLD=120, FNG_PRESS=85}; //finger servo positions
 enum lidSteps {LID_OPEN=10, LID_CLOSED=120}; //lid servo positions
 
 unsigned int switchPos[] = {200,200,800,1400,2000,2600,3220,3800,4400,5000,5600,6200};
