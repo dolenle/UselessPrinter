@@ -41,12 +41,10 @@ char touchStack[NUM_SWITCHES];
 char touchInd[NUM_SWITCHES];
 char touchPtr = -1;
 
-char switchQueue[NUM_SWITCHES];
+char switchQueue[NUM_SWITCHES+1];
 char switchInd[NUM_SWITCHES];
 char switchPtr = 0;
 char pressPtr = 0;
-char switched = -1;
-char lastPressed;
 
 unsigned int switchVal;
 boolean proximity;
@@ -74,10 +72,6 @@ void setup() {
   pinMode(MOTOR_PWM, OUTPUT);
   pinMode(MOTOR_0, OUTPUT);
   pinMode(MOTOR_1, OUTPUT);
-
-  for(char i=0; i<NUM_SWITCHES; i++) {
-    switchQueue[i] = -1;
-  }
 
   //initialize servos
   lidServo.attach(LID_SERVO);
@@ -114,7 +108,6 @@ void setup() {
   MPR121.setProxMode(PROX0_11);
 
   TCCR2B = TCCR2B & 0xF8 | 0x1; //increase PWM frequency
-  
   digitalWrite(LED, LOW);
 }
 
@@ -154,11 +147,15 @@ void loop() {
   }
   //read switches
   readSwitches();
+//  Serial.print("switchptr=");
+//  Serial.println(switchPtr,DEC);
+//  Serial.print("pressptr=");
+//  Serial.println(pressPtr,DEC);
 
   unsigned long now = millis();
 
   //First, open lid if touch or switched on
-  if(!lidOpen && (touchPtr >= 0 || switched >= 0 || proximity)) {
+  if(!lidOpen && (touchPtr >= 0 || switchInd[switchQueue[pressPtr]] || proximity)) {
     lidOpen = true;
     lidOpenTime = now;
     lidServo.write(LID_OPEN);
@@ -166,25 +163,33 @@ void loop() {
   }
 
   //If switch was sucessfully pressed, stop pressing it
-  if(fingerPos == FNG_PRESS && switched != lastPressed) {
+  if(fingerPos == FNG_PRESS && switchInd[switchQueue[pressPtr]] == 0) {
+    Serial.println("press ok");
     fingerServo.write(fingerPos = FNG_HOLD);
     lastPressTime = now;
+    //Get next switch to press, if any
+    while(pressPtr != switchPtr && !switchInd[switchQueue[pressPtr]]) {
+      if(pressPtr++ > NUM_SWITCHES) {
+        pressPtr = 0;
+      }
+    }
   }
 
   //Get next carriage position
-  if(now-lastPressTime > PRESS_DELAY) {
-    if(switched >= 0) {
-      carriagePos = switchPos[switched];
+  if(now - lastPressTime > PRESS_DELAY) {
+    if(switchInd[switchQueue[pressPtr]]) {
+      carriagePos = switchPos[switchQueue[pressPtr]];
     } else if(touchPtr >= 0) {
       carriagePos = switchPos[touchStack[touchPtr]];
     }
   }
   
   //Get next finger position
-  if(switched >= 0 && now - lidOpenTime > LID_DELAY) {
-    if(error < MARGIN && now-lastPressTime > PRESS_DELAY) {
+  if(switchInd[switchQueue[pressPtr]] && now - lidOpenTime > LID_DELAY) {
+    if(error < MARGIN && now - lastPressTime > PRESS_DELAY) {
       fingerServo.write(fingerPos = FNG_PRESS); //press switch
-      lastPressed = switched;
+//      Serial.print("press ");
+//      Serial.println(switchQueue[pressPtr], DEC);
     } else {
       fingerServo.write(fingerPos = FNG_HOLD); //wait to move to next switch
     }
@@ -204,23 +209,26 @@ void loop() {
 
 //faster version, approx 70uS
 void readSwitches() {
-  switchVal = 0;
+  digitalWrite(SR_CLK, HIGH); //invert phase
   digitalWrite(SR_LOAD, HIGH);
   for (char i=11; i>=0; i--)  {
     PORTB ^= bit(SR_CLK_BIT); //clk high
-    switchVal |= (bitRead(PINB, SR_DATA_BIT) << i);
+    if(bitRead(PINB, SR_DATA_BIT)) {
+      if(!switchInd[i]) {
+        Serial.print("switch ");
+        Serial.println(i, DEC);
+        switchQueue[switchPtr++] = i;
+        switchInd[i] = 1;
+        if(switchPtr > NUM_SWITCHES) {
+          switchPtr = 0;
+        }
+        Serial.println(switchPtr,DEC);
+      }
+    } else {
+      switchInd[i] = 0;
+    }
     PORTB ^= bit(SR_CLK_BIT); //clk low
   }
-  Serial.println(switchVal, BIN);
   digitalWrite(SR_LOAD, LOW);
-  for(char i=NUM_SWITCHES-1; i>=0; i--) {
-    if(switchVal & 0x01) {
-      switched = i;
-      return;
-    } else {
-      switchVal >>= 1;
-    }
-  }
-  switched = -1;
 }
 
