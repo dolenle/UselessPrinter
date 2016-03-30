@@ -31,15 +31,20 @@
 #define PRESS_DELAY 100
 #define MARGIN 30 //carriage position error margin
 
-enum fingerSteps {FNG_REST=173, FNG_HOLD=120, FNG_PRESS=85}; //finger servo positions
+enum fingerSteps {FNG_REST=5, FNG_HOLD=70, FNG_PRESS=100}; //finger servo positions
 enum lidSteps {LID_OPEN=10, LID_CLOSED=120}; //lid servo positions
 
-unsigned int switchPos[] = {200,200,800,1400,2000,2600,3220,3800,4400,5000,5600,6200};
+unsigned int switchPos[] = {290,870,1500,2080,2690,3290,3890,4490,5100,5700,6290,6870};
 //unsigned int switchPos[] = {7000,6390,5782,5173,4564,3954,3345,2736,2127,1518,909,300}; //fliplr
 
 char touchStack[NUM_SWITCHES];
 char touchInd[NUM_SWITCHES];
 char touchPtr = -1;
+
+char switchQueue[NUM_SWITCHES];
+char switchInd[NUM_SWITCHES];
+char switchPtr = 0;
+char pressPtr = 0;
 char switched = -1;
 char lastPressed;
 
@@ -69,6 +74,10 @@ void setup() {
   pinMode(MOTOR_PWM, OUTPUT);
   pinMode(MOTOR_0, OUTPUT);
   pinMode(MOTOR_1, OUTPUT);
+
+  for(char i=0; i<NUM_SWITCHES; i++) {
+    switchQueue[i] = -1;
+  }
 
   //initialize servos
   lidServo.attach(LID_SERVO);
@@ -100,7 +109,6 @@ void setup() {
   MPR121.goFast(); //increase i2c frequency
   MPR121.setTouchThreshold(180);
   MPR121.setTouchThreshold(12,8);
-  MPR121.setTouchThreshold(11,200);
   MPR121.setReleaseThreshold(60); 
   MPR121.setReleaseThreshold(12,5);
   MPR121.setProxMode(PROX0_11);
@@ -198,11 +206,12 @@ void loop() {
 void readSwitches() {
   switchVal = 0;
   digitalWrite(SR_LOAD, HIGH);
-  for (char i=15; i>=0; i--)  {
+  for (char i=11; i>=0; i--)  {
     PORTB ^= bit(SR_CLK_BIT); //clk high
     switchVal |= (bitRead(PINB, SR_DATA_BIT) << i);
     PORTB ^= bit(SR_CLK_BIT); //clk low
   }
+  Serial.println(switchVal, BIN);
   digitalWrite(SR_LOAD, LOW);
   for(char i=NUM_SWITCHES-1; i>=0; i--) {
     if(switchVal & 0x01) {
