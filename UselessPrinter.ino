@@ -32,7 +32,7 @@
 #define MARGIN 30 //carriage position error margin
 
 enum fingerSteps {FNG_REST=5, FNG_HOLD=70, FNG_PRESS=100}; //finger servo positions
-enum lidSteps {LID_OPEN=10, LID_CLOSED=120}; //lid servo positions
+enum lidSteps {LID_OPEN=10, LID_CLOSED=110}; //lid servo positions
 
 unsigned int switchPos[] = {290,870,1500,2080,2690,3290,3890,4490,5100,5700,6290,6870};
 //unsigned int switchPos[] = {7000,6390,5782,5173,4564,3954,3345,2736,2127,1518,909,300}; //fliplr
@@ -147,15 +147,12 @@ void loop() {
   }
   //read switches
   readSwitches();
-//  Serial.print("switchptr=");
-//  Serial.println(switchPtr,DEC);
-//  Serial.print("pressptr=");
-//  Serial.println(pressPtr,DEC);
 
   unsigned long now = millis();
+  char nextSwitch = switchQueue[pressPtr];
 
   //First, open lid if touch or switched on
-  if(!lidOpen && (touchPtr >= 0 || switchInd[switchQueue[pressPtr]] || proximity)) {
+  if(!lidOpen && (touchPtr >= 0 || switchInd[nextSwitch] || proximity)) {
     lidOpen = true;
     lidOpenTime = now;
     lidServo.write(LID_OPEN);
@@ -163,33 +160,31 @@ void loop() {
   }
 
   //If switch was sucessfully pressed, stop pressing it
-  if(fingerPos == FNG_PRESS && switchInd[switchQueue[pressPtr]] == 0) {
-    Serial.println("press ok");
+  if(fingerPos == FNG_PRESS && switchInd[nextSwitch] == 0) {
     fingerServo.write(fingerPos = FNG_HOLD);
     lastPressTime = now;
     //Get next switch to press, if any
-    while(pressPtr != switchPtr && !switchInd[switchQueue[pressPtr]]) {
+    while(pressPtr != switchPtr && !switchInd[nextSwitch]) {
       if(pressPtr++ > NUM_SWITCHES) {
         pressPtr = 0;
       }
+      nextSwitch = switchQueue[pressPtr];
     }
   }
 
   //Get next carriage position
   if(now - lastPressTime > PRESS_DELAY) {
     if(switchInd[switchQueue[pressPtr]]) {
-      carriagePos = switchPos[switchQueue[pressPtr]];
+      carriagePos = switchPos[nextSwitch];
     } else if(touchPtr >= 0) {
       carriagePos = switchPos[touchStack[touchPtr]];
     }
   }
   
   //Get next finger position
-  if(switchInd[switchQueue[pressPtr]] && now - lidOpenTime > LID_DELAY) {
+  if(switchInd[nextSwitch] && now - lidOpenTime > LID_DELAY) {
     if(error < MARGIN && now - lastPressTime > PRESS_DELAY) {
       fingerServo.write(fingerPos = FNG_PRESS); //press switch
-//      Serial.print("press ");
-//      Serial.println(switchQueue[pressPtr], DEC);
     } else {
       fingerServo.write(fingerPos = FNG_HOLD); //wait to move to next switch
     }
@@ -207,27 +202,24 @@ void loop() {
   }
 }
 
-//faster version, approx 70uS
+//Read switches on 74LS165 shift registers
 void readSwitches() {
   digitalWrite(SR_CLK, HIGH); //invert phase
   digitalWrite(SR_LOAD, HIGH);
   for (char i=11; i>=0; i--)  {
-    PORTB ^= bit(SR_CLK_BIT); //clk high
+    PORTB ^= bit(SR_CLK_BIT); //clk low
     if(bitRead(PINB, SR_DATA_BIT)) {
       if(!switchInd[i]) {
-        Serial.print("switch ");
-        Serial.println(i, DEC);
         switchQueue[switchPtr++] = i;
         switchInd[i] = 1;
         if(switchPtr > NUM_SWITCHES) {
           switchPtr = 0;
         }
-        Serial.println(switchPtr,DEC);
       }
     } else {
       switchInd[i] = 0;
     }
-    PORTB ^= bit(SR_CLK_BIT); //clk low
+    PORTB ^= bit(SR_CLK_BIT); //clk high
   }
   digitalWrite(SR_LOAD, LOW);
 }
