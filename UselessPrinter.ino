@@ -32,25 +32,24 @@
 #define MARGIN 30 //carriage position error margin
 
 enum fingerSteps {FNG_REST=5, FNG_HOLD=70, FNG_PRESS=100}; //finger servo positions
-enum lidSteps {LID_OPEN=10, LID_CLOSED=110}; //lid servo positions
+enum lidSteps {LID_OPEN=10, LID_CLOSED=120}; //lid servo positions
 
 unsigned int switchPos[] = {290,870,1500,2080,2690,3290,3890,4490,5100,5700,6290,6870};
-//unsigned int switchPos[] = {7000,6390,5782,5173,4564,3954,3345,2736,2127,1518,909,300}; //fliplr
 
 char touchStack[NUM_SWITCHES];
 char touchInd[NUM_SWITCHES];
 char touchPtr = -1;
 
-char switchQueue[NUM_SWITCHES+1];
+char switchQueue[NUM_SWITCHES];
 char switchInd[NUM_SWITCHES];
-char switchPtr = 0;
-char pressPtr = 0;
+char switchPtr = -1;
 
 unsigned int switchVal;
 boolean proximity;
 boolean lidOpen;
 unsigned long lidOpenTime;
 unsigned long lastPressTime;
+char lastPressed;
 
 int motorSpeed;
 unsigned int carriagePos = switchPos[0];
@@ -101,13 +100,16 @@ void setup() {
   }
 
   MPR121.goFast(); //increase i2c frequency
-  MPR121.setTouchThreshold(180);
-  MPR121.setTouchThreshold(12,8);
-  MPR121.setReleaseThreshold(60); 
-  MPR121.setReleaseThreshold(12,5);
+  MPR121.setTouchThreshold(40);
+  MPR121.setTouchThreshold(12,1);
+  MPR121.setReleaseThreshold(20); 
+  MPR121.setReleaseThreshold(12,0);
   MPR121.setProxMode(PROX0_11);
 
   TCCR2B = TCCR2B & 0xF8 | 0x1; //increase PWM frequency
+  for(char i=0; i<NUM_SWITCHES; i++) {
+   switchInd[i] = -1;
+  }
   digitalWrite(LED, LOW);
 }
 
@@ -149,10 +151,10 @@ void loop() {
   readSwitches();
 
   unsigned long now = millis();
-  char nextSwitch = switchQueue[pressPtr];
+  char nextSwitch = switchQueue[0];
 
   //First, open lid if touch or switched on
-  if(!lidOpen && (touchPtr >= 0 || switchInd[nextSwitch] || proximity)) {
+  if(!lidOpen && (touchPtr >= 0 || switchPtr >= 0 || proximity)) {
     lidOpen = true;
     lidOpenTime = now;
     lidServo.write(LID_OPEN);
@@ -160,21 +162,14 @@ void loop() {
   }
 
   //If switch was sucessfully pressed, stop pressing it
-  if(fingerPos == FNG_PRESS && switchInd[nextSwitch] == 0) {
+  if(fingerPos == FNG_PRESS && switchInd[lastPressed] < 0) {
     fingerServo.write(fingerPos = FNG_HOLD);
     lastPressTime = now;
-    //Get next switch to press, if any
-    while(pressPtr != switchPtr && !switchInd[nextSwitch]) {
-      if(pressPtr++ > NUM_SWITCHES) {
-        pressPtr = 0;
-      }
-      nextSwitch = switchQueue[pressPtr];
-    }
   }
 
   //Get next carriage position
   if(now - lastPressTime > PRESS_DELAY) {
-    if(switchInd[switchQueue[pressPtr]]) {
+    if(switchPtr >= 0) {
       carriagePos = switchPos[nextSwitch];
     } else if(touchPtr >= 0) {
       carriagePos = switchPos[touchStack[touchPtr]];
@@ -182,9 +177,10 @@ void loop() {
   }
   
   //Get next finger position
-  if(switchInd[nextSwitch] && now - lidOpenTime > LID_DELAY) {
+  if(switchPtr >= 0 && now - lidOpenTime > LID_DELAY) {
     if(error < MARGIN && now - lastPressTime > PRESS_DELAY) {
       fingerServo.write(fingerPos = FNG_PRESS); //press switch
+      lastPressed = nextSwitch;
     } else {
       fingerServo.write(fingerPos = FNG_HOLD); //wait to move to next switch
     }
@@ -209,15 +205,17 @@ void readSwitches() {
   for (char i=11; i>=0; i--)  {
     PORTB ^= bit(SR_CLK_BIT); //clk low
     if(bitRead(PINB, SR_DATA_BIT)) {
-      if(!switchInd[i]) {
-        switchQueue[switchPtr++] = i;
-        switchInd[i] = 1;
-        if(switchPtr > NUM_SWITCHES) {
-          switchPtr = 0;
-        }
+      if(switchInd[i] < 0) {
+        switchQueue[++switchPtr] = i;
+        switchInd[i] = switchPtr;
       }
-    } else {
-      switchInd[i] = 0;
+    } else if(switchInd[i] >= 0) {
+      for(char j=switchInd[i]; j<switchPtr; j++) {
+         switchQueue[j] = switchQueue[j+1];
+         switchInd[switchQueue[j]]--;
+      }
+      switchPtr--;
+      switchInd[i] = -1;
     }
     PORTB ^= bit(SR_CLK_BIT); //clk high
   }
