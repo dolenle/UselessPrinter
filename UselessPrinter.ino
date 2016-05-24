@@ -1,5 +1,5 @@
 /* 
- *  Useless Machine with Touch Sense
+ *  Advanced Useless Machine with Touch Sense
  *  Dolen Le 2016
  */
 
@@ -8,6 +8,8 @@
 #include <MPR121.h>
 #include <Wire.h>
 #include <Servo.h>
+#include <SoftwareSerial.h>
+#include <DFPlayer_Mini_Mp3.h>
 
 //Pin assignments
 #define MOTOR_PWM 11
@@ -22,17 +24,26 @@
 #define LID_SERVO 9
 #define FINGER_SERVO 10
 #define LED 13
+#define ENC_0 2
+#define ENC_1 3
+#define MP3_BUSY A2
 
 //Parameters
 #define MAX_PWM 255 //max motor speed
-#define ACCEL 1.5 //higher -> more accuracy and overshoot
 #define NUM_SWITCHES 12
-#define LID_DELAY 100
-#define PRESS_DELAY 100
+#define LID_DELAY 150
+#define PRESS_DELAY 130
 #define MARGIN 30 //carriage position error margin
+#define FAIL_TIMEOUT 5000
+float accel = 1.5; //higher -> more accuracy and overshoot
 
-enum fingerSteps {FNG_REST=5, FNG_HOLD=70, FNG_PRESS=100}; //finger servo positions
-enum lidSteps {LID_OPEN=10, LID_CLOSED=120}; //lid servo positions
+//Sounds
+#define NUM_TOUCH_SOUND 16
+#define NUM_PRESS_SOUND 22
+#define NUM_TAUNT_SOUND 2
+
+enum fingerSteps {FNG_REST=5, FNG_HOLD=65, FNG_PRESS=100}; //finger servo positions
+enum lidSteps {LID_OPEN=108, LID_CLOSED=40}; //lid servo positions
 
 unsigned int switchPos[] = {290,870,1500,2080,2690,3290,3890,4490,5100,5700,6290,6870};
 
@@ -49,18 +60,20 @@ boolean proximity;
 boolean lidOpen;
 unsigned long lidOpenTime;
 unsigned long lastPressTime;
+unsigned long fingerRestTime;
+unsigned long lastMoveTime;
 char lastPressed;
 
 int motorSpeed;
 unsigned int carriagePos = switchPos[0];
 byte fingerPos;
 
-Encoder carriageEnc(2, 3); //hardware interrupt
+Encoder carriageEnc(ENC_0, ENC_1); //hardware interrupt
 Servo lidServo;
 Servo fingerServo;
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   Serial.println("Starting...");
   pinMode(LED, OUTPUT);
   digitalWrite(LED, HIGH);
@@ -99,11 +112,17 @@ void setup() {
     Serial.println("Touch init");
   }
 
+  //initialize mp3
+  mp3_set_serial(Serial);
+  mp3_set_volume(25);
+  mp3_stop();
+  mp3_stop();
+
   MPR121.goFast(); //increase i2c frequency
-  MPR121.setTouchThreshold(40);
-  MPR121.setTouchThreshold(12,1);
+  MPR121.setTouchThreshold(30);
+  MPR121.setTouchThreshold(12,2); //prox
   MPR121.setReleaseThreshold(20); 
-  MPR121.setReleaseThreshold(12,0);
+  MPR121.setReleaseThreshold(12,1);
   MPR121.setProxMode(PROX0_11);
 
   TCCR2B = TCCR2B & 0xF8 | 0x1; //increase PWM frequency
@@ -116,7 +135,7 @@ void setup() {
 void loop() {
   //Update motor
   int error = carriagePos - carriageEnc.read();
-  motorSpeed = ACCEL*error;
+  motorSpeed = accel*error;
   if(motorSpeed >= 0) {
     analogWrite(MOTOR_PWM, min(motorSpeed, MAX_PWM));
     digitalWrite(MOTOR_1, HIGH);
@@ -134,9 +153,15 @@ void loop() {
     if(MPR121.isNewTouch(i)) {
       touchStack[++touchPtr] = i; //push to stack
       touchInd[i] = touchPtr;
+      if(digitalRead(MP3_BUSY) && random(3)) {
+        mp3_play(random(NUM_TOUCH_SOUND));
+      }
     } else if(MPR121.isNewRelease(i)) {
       for(char j=touchInd[i]; j<touchPtr; j++) {
-         touchStack[j] = touchStack[j+1];
+        touchStack[j] = touchStack[j+1];
+      }
+      if(digitalRead(MP3_BUSY) && switchInd[i] == -1 && i != lastPressed) {
+        mp3_play(100+random(NUM_TAUNT_SOUND));
       }
       touchPtr--;
     }
@@ -151,6 +176,13 @@ void loop() {
   readSwitches();
 
   unsigned long now = millis();
+
+  //failsafe in case stuck carriage
+  if(now-lastMoveTime > FAIL_TIMEOUT) {
+    accel = 0;
+    lidServo.write(LID_OPEN);
+    fingerServo.write(FNG_HOLD);
+  }
   char nextSwitch = switchQueue[0];
 
   //First, open lid if touch or switched on
@@ -165,6 +197,9 @@ void loop() {
   if(fingerPos == FNG_PRESS && switchInd[lastPressed] < 0) {
     fingerServo.write(fingerPos = FNG_HOLD);
     lastPressTime = now;
+    if(digitalRead(MP3_BUSY)) {
+      mp3_play(50+random(NUM_PRESS_SOUND));
+    }
   }
 
   //Get next carriage position
@@ -174,6 +209,11 @@ void loop() {
     } else if(touchPtr >= 0) {
       carriagePos = switchPos[touchStack[touchPtr]];
     }
+  }
+
+  //failsafe
+  if(error < MARGIN) {
+    lastMoveTime = now;
   }
   
   //Get next finger position
@@ -187,11 +227,14 @@ void loop() {
   } else if(touchPtr >= 0 && now - lidOpenTime > LID_DELAY) {
     fingerServo.write(fingerPos = FNG_HOLD); //hover over switch
   } else {
+    if(fingerPos != FNG_REST) {
+      fingerRestTime = now;
+    }
     fingerServo.write(fingerPos = FNG_REST); //retract
   }
 
   //Close lid if no input
-  if(lidOpen && !proximity && fingerPos == FNG_REST && now - lidOpenTime > LID_DELAY) {
+  if(lidOpen && !proximity && fingerPos == FNG_REST && now - lidOpenTime > LID_DELAY && now - fingerRestTime > 250) {
     lidOpen = false;
     lidServo.write(LID_CLOSED);
     digitalWrite(LED, LOW);
@@ -205,7 +248,7 @@ void readSwitches() {
   for (char i=11; i>=0; i--)  {
     PORTB ^= bit(SR_CLK_BIT); //clk low
     if(bitRead(PINB, SR_DATA_BIT)) {
-      if(switchInd[i] < 0) {
+      if(switchInd[i] < 0) { //push stack
         switchQueue[++switchPtr] = i;
         switchInd[i] = switchPtr;
       }
